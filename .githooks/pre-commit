@@ -17,7 +17,16 @@ cd "$repo_root"
 # other special characters intact. Filtering happens in the loop so we do
 # not depend on GNU grep behavior.
 files=()
+list_failed=0
 while IFS= read -r -d '' f; do
+  # Empty records can only come from the failure sentinel below: git never
+  # lists empty filenames. A failed process substitution does not propagate
+  # its exit status to this loop, so without the sentinel the hook would
+  # silently skip formatting when git diff itself fails.
+  if [[ -z $f ]]; then
+    list_failed=1
+    continue
+  fi
   if [[ $f != *.c && $f != *.h && $f != *.cpp && $f != *.hpp ]]; then
     continue
   fi
@@ -25,7 +34,12 @@ while IFS= read -r -d '' f; do
     continue
   fi
   files+=("$f")
-done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+done < <(git diff --cached --name-only --diff-filter=ACMR -z || printf '\0')
+
+if [[ $list_failed -eq 1 ]]; then
+  echo "[pre-commit] Failed to read the staged file list from Git." >&2
+  exit 1
+fi
 
 if [[ ${#files[@]} -eq 0 ]]; then
   exit 0
