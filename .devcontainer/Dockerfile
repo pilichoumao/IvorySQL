@@ -38,11 +38,24 @@ RUN apt-get update && apt-get install -y \
     gdb \
     && rm -rf /var/lib/apt/lists/*
 
-# Install meson and ninja from source (matching workflow versions)
+# Install meson and ninja from source (matching workflow versions).
+# The pinned ninja v1.10.1 release only ships an x86_64 Linux binary
+# (ninja-linux.zip; upstream added Linux arm64 assets in v1.12.1), which
+# cannot run on the arm64 variant of this image. Keep the upstream zip on
+# amd64 and install the distro package on other architectures: Ubuntu
+# 22.04 ships ninja-build 1.10.1, the same upstream version, natively for
+# every architecture it supports.
 RUN curl -L "https://github.com/mesonbuild/meson/releases/download/1.0.1/meson-1.0.1.tar.gz" -o /tmp/meson-1.0.1.tar.gz \
-    && curl -L "https://github.com/ninja-build/ninja/releases/download/v1.10.1/ninja-linux.zip" -o /tmp/ninja-linux.zip \
-    && unzip -o /tmp/ninja-linux.zip -d /tmp \
-    && cp /tmp/ninja /usr/bin/ \
+    && arch="$(dpkg --print-architecture)" \
+    && if [ "$arch" = "amd64" ]; then \
+         curl -L "https://github.com/ninja-build/ninja/releases/download/v1.10.1/ninja-linux.zip" -o /tmp/ninja-linux.zip \
+         && unzip -o /tmp/ninja-linux.zip -d /tmp \
+         && cp /tmp/ninja /usr/bin/; \
+       else \
+         apt-get update \
+         && apt-get install -y --no-install-recommends ninja-build \
+         && rm -rf /var/lib/apt/lists/*; \
+       fi \
     && tar xzf /tmp/meson-1.0.1.tar.gz -C /tmp \
     && cd /tmp/meson-1.0.1 && python3 setup.py install \
     && rm -rf /tmp/meson-1.0.1* /tmp/ninja*
