@@ -25,15 +25,17 @@ jobs:
     env:
       TAR: "c:/windows/system32/tar.exe"
       MESON_COMMON_PG_CONFIG_ARGS: -Dcassert=true -Dinjection_points=true
-      # Same feature set as pg-ci.yml windows-vs
+      # Minimal feature set for compiling libpq only. Note: pg-ci.yml's
+      # windows flags cannot be reused verbatim — upstream never actually
+      # runs those jobs (PG_CI_ENABLED unset => all skipped), and the
+      # repo's uuid default is 'e2fs', which cannot be satisfied on Windows
+      # (no pkg-config), so configure needs -Duuid=none. tap_tests/plperl/
+      # plpython/ldap are irrelevant to libpq and only add setup-time
+      # dependencies (e.g. perl IPC::Run).
       MESON_FEATURES: >-
         -Dauto_features=disabled
         -Dcpp_args=/std:c++20
-        -Dldap=enabled
-        -Dplperl=enabled
-        -Dplpython=enabled
-        -Dssl=openssl
-        -Dtap_tests=enabled
+        -Duuid=none
     steps:
       - uses: actions/checkout@v4
 
