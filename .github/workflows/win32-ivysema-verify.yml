@@ -82,8 +82,15 @@ jobs:
         shell: bash
         run: |
           set -eux
-          # the compiled sources are the PR's: no exit( left, three abort()
-          ! grep -n 'exit *(' src/interfaces/libpq/win32_ivysema.c
-          test "$(grep -c 'abort()' src/interfaces/libpq/win32_ivysema.c)" = "3"
-          ! grep -n 'exit *(' src/interfaces/libpq/sysv_ivysema.c
+          # Assert on real statement lines only (patterns exclude comment text).
+          # NB: use explicit if-checks; "! grep" would be exempt from set -e.
+          if grep -n 'exit(-1)' src/interfaces/libpq/win32_ivysema.c; then
+            echo "FAIL: exit(-1) still present in win32_ivysema.c"; exit 1
+          fi
+          if grep -n 'exit(-1)' src/interfaces/libpq/sysv_ivysema.c; then
+            echo "FAIL: exit(-1) still present in sysv_ivysema.c"; exit 1
+          fi
+          # Exactly the expected abort() call statements:
+          test "$(grep -cE '^[[:space:]]*abort\(\);' src/interfaces/libpq/win32_ivysema.c)" = "3"
+          test "$(grep -cE '^[[:space:]]*abort\(\);' src/interfaces/libpq/sysv_ivysema.c)" = "2"
           git log -1 --format='%H %s'
