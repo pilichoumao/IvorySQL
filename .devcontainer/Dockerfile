@@ -10,8 +10,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     # Build tools
     build-essential git lcov bison flex pkg-config cppcheck \
-    # For meson/ninja installation
-    curl unzip \
+    # For meson installation
+    curl \
+    # Ninja: Ubuntu 22.04 ships ninja-build 1.10.1 - the same upstream
+    # version the workflows pin - natively for every architecture this
+    # image supports, while the pinned ninja v1.10.1 release only
+    # provides an x86_64 Linux binary (upstream added Linux arm64
+    # assets only in v1.12.1)
+    ninja-build \
     # Core dependencies
     libkrb5-dev libssl-dev libldap-dev libpam-dev \
     libxml2-dev libxslt-dev libreadline-dev libedit-dev \
@@ -38,27 +44,12 @@ RUN apt-get update && apt-get install -y \
     gdb \
     && rm -rf /var/lib/apt/lists/*
 
-# Install meson and ninja from source (matching workflow versions).
-# The pinned ninja v1.10.1 release only ships an x86_64 Linux binary
-# (ninja-linux.zip; upstream added Linux arm64 assets in v1.12.1), which
-# cannot run on the arm64 variant of this image. Keep the upstream zip on
-# amd64 and install the distro package on other architectures: Ubuntu
-# 22.04 ships ninja-build 1.10.1, the same upstream version, natively for
-# every architecture it supports.
+# Install meson from source (matching the workflow version). Ninja comes
+# from the ninja-build distro package installed above.
 RUN curl -L "https://github.com/mesonbuild/meson/releases/download/1.0.1/meson-1.0.1.tar.gz" -o /tmp/meson-1.0.1.tar.gz \
-    && arch="$(dpkg --print-architecture)" \
-    && if [ "$arch" = "amd64" ]; then \
-         curl -L "https://github.com/ninja-build/ninja/releases/download/v1.10.1/ninja-linux.zip" -o /tmp/ninja-linux.zip \
-         && unzip -o /tmp/ninja-linux.zip -d /tmp \
-         && cp /tmp/ninja /usr/bin/; \
-       else \
-         apt-get update \
-         && apt-get install -y --no-install-recommends ninja-build \
-         && rm -rf /var/lib/apt/lists/*; \
-       fi \
     && tar xzf /tmp/meson-1.0.1.tar.gz -C /tmp \
     && cd /tmp/meson-1.0.1 && python3 setup.py install \
-    && rm -rf /tmp/meson-1.0.1* /tmp/ninja*
+    && rm -rf /tmp/meson-1.0.1*
 
 # Set up locale
 RUN locale-gen en_US.UTF-8
