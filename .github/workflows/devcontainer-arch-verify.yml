@@ -1,0 +1,112 @@
+# Verification-only workflow (lives on the fork's verify/ branch, not part of
+# the upstream PR). Round 2, after review feedback:
+#   - ninja now comes from the distro package on ALL architectures
+#   - additionally verifies the ACTUAL devcontainer setup path:
+#     (a) docker compose up + a real development workflow inside the
+#         container as user ivorysql (meson setup of the mounted source
+#         tree + building a real target), and
+#     (b) the official devcontainer CLI (`devcontainer up`), the same
+#         engine VS Code uses, against .devcontainer/devcontainer.json.
+name: devcontainer arch verify
+
+on:
+  push:
+    branches: [ verify/devcontainer-arm64 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: arm64-native
+            runner: ubuntu-24.04-arm
+            expect_uname: aarch64
+            expect_emachine: 183
+            expect_docker_arch: arm64
+          - name: amd64-native
+            runner: ubuntu-latest
+            expect_uname: x86_64
+            expect_emachine: 62
+            expect_docker_arch: amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runner architecture
+        run: uname -m
+
+      - name: Build image via plain docker build
+        run: docker build -f .devcontainer/Dockerfile -t ivorysql-dev-direct .
+
+      - name: Assert image metadata and toolchain (direct build)
+        run: |
+          set -eux
+          docker image inspect ivorysql-dev-direct \
+            --format 'image: arch={{.Architecture}} os={{.Os}} id={{.Id}}'
+          test "$(docker image inspect ivorysql-dev-direct --format '{{.Architecture}}')" \
+            = "${{ matrix.expect_docker_arch }}"
+          arch=$(docker run --rm ivorysql-dev-direct uname -m)
+          test "$arch" = "${{ matrix.expect_uname }}"
+          emachine=$(docker run --rm ivorysql-dev-direct python3 -c \
+            "import struct; print(struct.unpack_from('<H', open('/usr/bin/ninja','rb').read(20), 18)[0])")
+          test "$emachine" = "${{ matrix.expect_emachine }}"
+          ninjaver=$(docker run --rm ivorysql-dev-direct ninja --version)
+          test "$ninjaver" = "1.10.1"
+          docker run --rm ivorysql-dev-direct meson --version
+          # ninja now comes from the distro package on every architecture
+          docker run --rm ivorysql-dev-direct dpkg -S /usr/bin/ninja
+
+      - name: End-to-end meson+ninja compile inside the image (direct build)
+        run: |
+          set -eux
+          mkdir -p /tmp/mptest
+          cat > /tmp/mptest/meson.build <<'EOF'
+          project('t', 'c')
+          executable('t', 't.c')
+          EOF
+          echo 'int main(void) { return 0; }' > /tmp/mptest/t.c
+          chmod 777 /tmp/mptest
+          docker run --rm -v /tmp/mptest:/work -w /work ivorysql-dev-direct \
+            bash -c 'meson setup b && ninja -C b && ./b/t && echo MESON_NINJA_END_TO_END_OK'
+
+      - name: Compose track - real dev workflow inside the running container
+        run: |
+          set -eux
+          docker compose -f docker-compose.yaml up -d --build dev
+          docker compose -f docker-compose.yaml ps
+          # exec runs as the image USER (ivorysql); assert identity, toolchain,
+          # then do real development: configure the mounted source tree with
+          # the container's own meson (out-of-tree build dir in /tmp, since the
+          # bind mount is owned by the host runner uid) and build a real target.
+          docker compose -f docker-compose.yaml exec -T dev bash -c '
+            set -eux
+            id
+            test "$(id -un)" = "ivorysql"
+            test "$(ninja --version)" = "1.10.1"
+            dpkg -S /usr/bin/ninja
+            meson --version
+            meson setup /tmp/build /home/ivorysql/IvorySQL
+            ninja -C /tmp/build src/tools/pg_bsd_indent/pg_bsd_indent
+            test -x /tmp/build/src/tools/pg_bsd_indent/pg_bsd_indent
+            echo DEV_WORKFLOW_OK
+          '
+          docker compose -f docker-compose.yaml down
+
+      - name: Devcontainer CLI track - the actual devcontainer setup path
+        run: |
+          set -eux
+          npm install -g @devcontainers/cli
+          devcontainer --version
+          # This is the same engine VS Code uses: parses
+          # .devcontainer/devcontainer.json, builds via the referenced
+          # docker-compose.yaml and starts the container.
+          devcontainer up --workspace-folder .
+          docker ps --format '{{.Names}} {{.Image}} {{.Status}}'
+          echo DEVCONTAINER_UP_OK
