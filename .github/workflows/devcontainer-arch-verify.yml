@@ -79,6 +79,13 @@ jobs:
       - name: Compose track - real dev workflow inside the running container
         run: |
           set -eux
+          # The repo's meson setup creates symlinks INSIDE the source tree
+          # (src/fe_utils/meson.build run_command(ln -s ...)), so the mounted
+          # checkout must be writable by the container user (ivorysql, uid
+          # 1000) - as it is in real desktop use, where bind-mount ownership
+          # semantics are flattened (Docker Desktop) or uids match. The
+          # runner checkout is uid 1001, so open it up first.
+          chmod -R a+rwX "$GITHUB_WORKSPACE"
           docker compose -f docker-compose.yaml up -d --build dev
           docker compose -f docker-compose.yaml ps
           # exec runs as the image USER (ivorysql); assert identity, toolchain,
