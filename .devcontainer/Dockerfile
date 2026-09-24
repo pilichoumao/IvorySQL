@@ -9,15 +9,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install build dependencies matching the workflow requirements
 RUN apt-get update && apt-get install -y \
     # Build tools
-    build-essential git lcov bison flex pkg-config cppcheck \
+    build-essential git lcov bison flex pkg-config cppcheck ninja-build \
     # For meson installation
     curl \
-    # Ninja: Ubuntu 22.04 ships ninja-build 1.10.1 - the same upstream
-    # version the workflows pin - natively for every architecture this
-    # image supports, while the pinned ninja v1.10.1 release only
-    # provides an x86_64 Linux binary (upstream added Linux arm64
-    # assets only in v1.12.1)
-    ninja-build \
     # Core dependencies
     libkrb5-dev libssl-dev libldap-dev libpam-dev \
     libxml2-dev libxslt-dev libreadline-dev libedit-dev \
@@ -44,8 +38,6 @@ RUN apt-get update && apt-get install -y \
     gdb \
     && rm -rf /var/lib/apt/lists/*
 
-# Install meson from source (matching the workflow version). Ninja comes
-# from the ninja-build distro package installed above.
 RUN curl -L "https://github.com/mesonbuild/meson/releases/download/1.0.1/meson-1.0.1.tar.gz" -o /tmp/meson-1.0.1.tar.gz \
     && tar xzf /tmp/meson-1.0.1.tar.gz -C /tmp \
     && cd /tmp/meson-1.0.1 && python3 setup.py install \
